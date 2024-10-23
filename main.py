@@ -171,4 +171,3 @@ def send_kitchen_duties(message):
 
 # Запуск бота
 bot.polling(none_stop=True)
-
