@@ -1,165 +1,265 @@
 import telebot
+import sqlite3
 
-# Вставь сюда свой токен бота
+# токен бота
 bot = telebot.TeleBot('7852742995:AAHLnc9bi2jUwUPI_rARhbAK3vlxHWLllaA')
 
-# Сводная информация о косяках (удобно редактировать)
-kozyaki_summary = """
-Статистика косяков хаты:
-Шомка: 2 косяка
-Тимур Гиндулла: 2 косяка
-Тимур Шамс: 3 косяков, 500 не отдал
-Тимур абс: 4 косяка, 500руб не отдал
-Артур: 0 косяков
-Шайдуллин: 6 косяка, 1000 рублей не отдал
-Тагири: -1(минус один) косяков, 500 руб отдал
-"""
 
-# Информация о косяках с подробностями
-kozyaki_details = {
-    "Шомка": [
-        {"дата": "-", "причина": "чашки с плесенью и чаем(не помыл, вроде 2 раза)"},
-        {"дата": "-", "причина": "посуда с супом"},
-        {"дата": "-", "причина": "остальные не знаю\не помню"},
-        {"дата": "23.10.2024", "причина": "генка"},
-    ],
-    "Тимур Гиндулла": [
-        {"дата": "15.09.2024", "причина": "генка"},
+# Пароль для режима редактирования йоу
+admin_password = "Tagir123Abiy"
 
-    ],
-    "Тимур Шамс": [
-        {"дата": "22.09.2024", "причина": "один косяк за генку (решение общепринятое)"},
-        {"дата": "28.09.2024", "причина": "не помыл посуду"},
-        {"дата": "-", "причина": "остальные не знаю\не помню"},
-        {"дата": "10.10.2024", "причина": "на кухне оставил, по вложениям в группе пруфы"},
-        {"дата": "21.10.2024", "причина": "генка"},
-        {"дата": "22.10.2024", "причина": "генка"},
-        {"дата": "23.10.2024", "причина": "генка"},
-    ],
-    "Тимур абс": [
-        {"дата": "-", "причина": "Балкон(вроде)"},
-        {"дата": "04.10.2024", "причина": "Балкон, за форму"},
-        {"дата": "21.10.2024", "причина": "генка"},
-        {"дата": "22.10.2024", "причина": "генка"},
-        {"дата": "23.10.2024", "причина": "генка"},
-    ],
-    "Артур": [
-        {"дата": "13.10.2024", "причина": "генка"},
-    ],
-    "Шайдуллин": [
-        {"дата": "15.09.2024", "причина": "генка"},
-        {"дата": "03.10.2024", "причина": "посуда не помыта"},
-        {"дата": "21.10.2024", "причина": "генка"},
-        {"дата": "22.10.2024", "причина": "генка"},
-        {"дата": "23.10.2024", "причина": "генка"},
-    ],
-    "Тагири": [
-        {"дата": "15.09.2024", "причина": "генка"},
-        {"дата": "16.09.2024", "причина": "тоже генка, только один косяк"}
-    ],
-}
+# Флаг для режима редактирования
+edit_mode = False
 
-# Краткая статистика косяков
-kozyaki_stats = {name: f"{len(details)} косяков" for name, details in kozyaki_details.items()}
+# Инициализация базы данных
+def init_db():
+    conn = sqlite3.connect("kozyaki.db")
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS kozyaki (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        date TEXT,
+                        reason TEXT
+                      )''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS roles (
+                        name TEXT PRIMARY KEY,
+                        role TEXT
+                      )''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS duties (
+                        day TEXT PRIMARY KEY,
+                        person TEXT
+                      )''')
+    conn.commit()
+    conn.close()
 
-# Информация о генке
-genka_info = """
-Артур - Коридор
-Тагири - Комната своя
-Тимур Шамс - Кухня
-Тимур Абс - Комната своя
-Тимур Гиндули - Комната своя
-Шамиль - Ванна
-Шайдуллин - Туалет
-"""
+# Добавление косяка в базу данных
+def add_kozyak_to_db(name, date, reason):
+    conn = sqlite3.connect("kozyaki.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO kozyaki (name, date, reason) VALUES (?, ?, ?)", (name, date, reason))
+    conn.commit()
+    conn.close()
 
-# Роли по хате
-house_roles = {
-    "Шайбоба": "Хозтовары",
-    "Артур": "Шериф",
-    "Шамиль": "Санитар",
-    "Тимур Шамс": "Сантехник",
-    "Тагири": "Вайфай и вода",
-}
+# Удаление косяка из базы данных по имени и порядковому номеру
+def remove_kozyak_from_db(name, index):
+    conn = sqlite3.connect("kozyaki.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM kozyaki WHERE name = ? ORDER BY id LIMIT 1 OFFSET ?", (name, index - 1))
+    result = cursor.fetchone()
+    if result:
+        kozyak_id = result[0]
+        cursor.execute("DELETE FROM kozyaki WHERE id = ?", (kozyak_id,))
+        conn.commit()
+        conn.close()
+        return True
+    conn.close()
+    return False
 
-# Дежурство на кухне
-kitchen_duties_daily = {
-    "Понедельник": "Амир",
-    "Вторник": "Гиндула",
-    "Среда": "Шамиль",
-    "Четверг": "Абс",
-    "Пятница": "Шамс",
-    "Суббота": "Тагири",
-    "Воскресенье": "Артур"
-}
+# Редактирование роли в базе данных
+def update_role(name, role):
+    conn = sqlite3.connect("kozyaki.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO roles (name, role) VALUES (?, ?)", (name, role))
+    conn.commit()
+    conn.close()
 
-# Команда старт
+# Редактирование дежурства на день
+def update_duty(day, person):
+    conn = sqlite3.connect("kozyaki.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO duties (day, person) VALUES (?, ?)", (day, person))
+    conn.commit()
+    conn.close()
+
+# Получение сводной информации из базы данных
+def get_kozyaki_summary():
+    conn = sqlite3.connect("kozyaki.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, COUNT(*) as count FROM kozyaki GROUP BY name")
+    summary = "Статистика косяков хаты:\n"
+    for row in cursor.fetchall():
+        summary += f"{row[0]}: {row[1]} косяков\n"
+    conn.close()
+    return summary
+
+# Получение всех ролей
+def get_roles_summary():
+    conn = sqlite3.connect("kozyaki.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, role FROM roles")
+    summary = "Роли по хате:\n"
+    for row in cursor.fetchall():
+        summary += f"{row[0]}: {row[1]}\n"
+    conn.close()
+    return summary
+
+# Получение всех дежурств
+def get_duties_summary():
+    conn = sqlite3.connect("kozyaki.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT day, person FROM duties")
+    summary = "Дежурство на кухне:\n"
+    for row in cursor.fetchall():
+        summary += f"{row[0]}: {row[1]}\n"
+    conn.close()
+    return summary
+
+# Получение подробной информации о косяках для конкретного человека
+def get_kozyaki_details(name):
+    conn = sqlite3.connect("kozyaki.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT date, reason FROM kozyaki WHERE name = ?", (name,))
+    details = cursor.fetchall()
+    conn.close()
+    return details
+
+# Инициализация базы данных при старте
+init_db()
+
+# Вход в режим редактирования
+@bot.message_handler(commands=['edit'])
+def enter_edit_mode(message):
+    global edit_mode
+    msg = bot.send_message(message.chat.id, "Введите пароль для входа в режим редактирования:")
+    bot.register_next_step_handler(msg, check_password)
+
+# Проверка пароля
+def check_password(message):
+    global edit_mode
+    if message.text == admin_password:
+        edit_mode = True
+        bot.send_message(message.chat.id, "Пароль верный! Вход в режим редактирования.")
+    else:
+        bot.send_message(message.chat.id, "Неправильный пароль!")
+
+# Добавление косяка через команду /add
+@bot.message_handler(func=lambda message: edit_mode and message.text.startswith('/add'))
+def add_kozyak(message):
+    try:
+        parts = message.text.split(" ", 3)  # Сплитим до 4 частей, чтобы ЧТо? хз мне лень
+        name = parts[1]
+        date = parts[2]
+        reason = parts[3] if len(parts) > 3 else "Не указана причина"  # Все оставшееся – причина
+        add_kozyak_to_db(name, date, reason)
+        bot.send_message(message.chat.id, f"Косяк для {name} добавлен!")
+    except IndexError:
+        bot.send_message(message.chat.id, "Неверный формат! Используйте: /add <имя> <дата> <причина>")
+
+# Удаление косяка через команду /remove
+@bot.message_handler(func=lambda message: edit_mode and message.text.startswith('/remove'))
+def remove_kozyak(message):
+    try:
+        _, name, index = message.text.split(" ", 2)
+        index = int(index)
+        if remove_kozyak_from_db(name, index):
+            bot.send_message(message.chat.id, f"Косяк номер {index} для {name} удален!")
+        else:
+            bot.send_message(message.chat.id, f"Косяк номер {index} для {name} не найден.")
+    except ValueError:
+        bot.send_message(message.chat.id, "Неверный формат! Используйте: /remove <имя> <номер косяка>")
+
+# Редактирование роли через команду /role
+@bot.message_handler(func=lambda message: edit_mode and message.text.startswith('/role'))
+def edit_role(message):
+    try:
+        _, name, role = message.text.split(" ", 2)
+        name = name.title()  # Приводим имя к формату с заглавной буквы а то два имени будут
+        update_role(name, role)
+        bot.send_message(message.chat.id, f"Роль для {name} обновлена на '{role}'!")
+    except ValueError:
+        bot.send_message(message.chat.id, "Неверный формат! Используйте: /role <имя> <роль>")
+
+# Редактирование дежурства через команду /duty
+@bot.message_handler(func=lambda message: edit_mode and message.text.startswith('/duty'))
+def edit_duty(message):
+    try:
+        _, day, person = message.text.split(" ", 2)
+        day = day.capitalize()  # Приводим день к формату с заглавной буквы
+        person = person.title()  # Приводим имя к формату с заглавной буквы
+        update_duty(day, person)
+        bot.send_message(message.chat.id, f"Дежурный на {day} обновлен на '{person}'!")
+    except ValueError:
+        bot.send_message(message.chat.id, "Неверный формат! Используйте: /duty <день> <имя>")
+
+# Выход из режима редактирования
+@bot.message_handler(commands=['done'])
+def exit_edit_mode(message):
+    global edit_mode
+    if edit_mode:
+        edit_mode = False
+        bot.send_message(message.chat.id, "Вы вышли из режима редактирования.")
+    else:
+        bot.send_message(message.chat.id, "Вы не в режиме редактирования.")
+
+# Команда /start
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-
-    # Создаем кнопки
     btn_stats = telebot.types.KeyboardButton('Статистика косяков хаты')
-    btn_king = telebot.types.KeyboardButton('посмотреть в глазок')
-    btn_duties = telebot.types.KeyboardButton('Информация о генке')
-    btn_kitchen = telebot.types.KeyboardButton('Роль + дежурный кухни')
-
-    # Размещаем кнопки в два ряда
-    markup.row(btn_stats, btn_king)
-    markup.row(btn_duties, btn_kitchen)
-
+    btn_roles = telebot.types.KeyboardButton('Роли')
+    btn_duties = telebot.types.KeyboardButton('Дежурство на кухне')
+    btn_king = telebot.types.KeyboardButton('посмотреть в глазок')  # Добавляем кнопку обратно
+    markup.row(btn_stats, btn_roles, btn_duties)
+    markup.row(btn_king)
     bot.send_message(message.chat.id, "Selam alaikum! Выбери то, что тебя интересует.", reply_markup=markup)
 
-# Обработка кнопки для статистики косяков
+
+# Команда /help
+@bot.message_handler(commands=['help'])
+def start(message):
+    bot.send_message(message.chat.id, "Абый! есть команды такие, как: /edit, чтобы перейти в режим редактирования. /role , /remove, /duty, думаю что за что и так понятно, если что там можно посмотреть. И ПОСЛЕ ВСЕХ ИЗМЕНЕНИЙ ПИШИ /done, чтобы выйти из режима редактирования, а то бот афигеет. ")
+
+# Обработка кнопок
 @bot.message_handler(func=lambda message: message.text == "Статистика косяков хаты")
 def send_stats(message):
+    summary = get_kozyaki_summary()
     markup = telebot.types.InlineKeyboardMarkup()
 
-    # Создаем кнопки для каждого человека
-    for name in kozyaki_stats:
-        markup.add(telebot.types.InlineKeyboardButton(name, callback_data=f"detail_{name}"))
+    # Добавляем кнопки для каждого человека из таблицы косяков
+    conn = sqlite3.connect("kozyaki.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT name FROM kozyaki")
+    for row in cursor.fetchall():
+        markup.add(telebot.types.InlineKeyboardButton(row[0], callback_data=f"detail_{row[0]}"))
+    conn.close()
 
-    bot.send_message(message.chat.id, kozyaki_summary, reply_markup=markup)
+    bot.send_message(message.chat.id, summary, reply_markup=markup)
 
-# Обработка нажатия на кнопку для детальной информации
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("detail_"))
 def send_detailed_info(call):
-    # Извлекаем имя из callback_data
     name = call.data[len("detail_"):]
-
-    # Получаем детальную информацию о косяках
-    details = kozyaki_details.get(name, [])
+    details = get_kozyaki_details(name)
     if details:
         detail_message = f"Подробная информация о косяках {name}:\n\n"
         for idx, detail in enumerate(details, 1):
-            detail_message += f"{idx}. Дата: {detail['дата']}, Причина: {detail['причина']}\n"
+            detail_message += f"{idx}. Дата: {detail[0]}, Причина: {detail[1]}\n"
     else:
         detail_message = f"Нет информации о косяках для {name}."
-
     bot.send_message(call.message.chat.id, detail_message)
 
-# Обработка кнопки "кто же такой этот король кринжа?"
+
+@bot.message_handler(func=lambda message: message.text == "Роли")
+def send_roles(message):
+    summary = get_roles_summary()
+    bot.send_message(message.chat.id, summary)
+
+
+@bot.message_handler(func=lambda message: message.text == "Дежурство на кухне")
+def send_duties(message):
+    summary = get_duties_summary()
+    bot.send_message(message.chat.id, summary)
+
+
+# Обработка команды "посмотреть в глазок"
 @bot.message_handler(func=lambda message: message.text == "посмотреть в глазок")
 def send_photo_of_king(message):
     try:
-        with open(r'2 булат.jpg', 'rb') as photo:  # Убедись, что путь к фото корректный
+        with open(r'2 булат.jpg', 'rb') as photo:
             bot.send_photo(message.chat.id, photo)
     except FileNotFoundError:
         bot.send_message(message.chat.id, "Фотография не найдена. Проверь путь к файлу.")
 
-# Обработка кнопки "Информация о генке"
-@bot.message_handler(func=lambda message: message.text == "Информация о генке")
-def send_genka_info(message):
-    bot.send_message(message.chat.id, f"------------Генка------------\n{genka_info}")
-
-# Обработка кнопки "Роль + дежурный кухни"
-@bot.message_handler(func=lambda message: message.text == "Роль + дежурный кухни")
-def send_kitchen_duties(message):
-    roles_message = "\n".join([f"*{role}*: {person}" for role, person in house_roles.items()])
-    kitchen_message = "\n".join([f"*{day}*: {person}" for day, person in kitchen_duties_daily.items()])
-    full_message = f"------------Роли------------\n{roles_message}\n\n" \
-                   f"------------Дежурные на кухне------------\n{kitchen_message}"
-    bot.send_message(message.chat.id, full_message, parse_mode='Markdown')
 
 # Запуск бота
 bot.polling(none_stop=True)
